@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ассистент автосервиса — локальная модель</title>
+<style>
+  :root {
+    --paper: #E9EEF3;      /* копирочная бумага заказ-наряда */
+    --sheet: #F6F8FA;      /* лист, на котором пишут */
+    --ink: #1E2A44;        /* чернила */
+    --graphite: #5B6577;   /* карандаш, второстепенное */
+    --rule: #C9D3DE;       /* линовка */
+    --action: #2F5D8A;     /* кнопки и выделение */
+    --stamp: #A8322D;      /* печать — только штамп и ошибки */
+    --display: "Bahnschrift", "DIN Alternate", "Segoe UI", system-ui, sans-serif;
+    --text: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #18202E; --sheet: #1F2939; --ink: #E4EAF1; --graphite: #9AA6B8;
+      --rule: #334055; --action: #7FA7D1; --stamp: #E0756E;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink); font: 16px/1.55 var(--text);
+    display: grid; grid-template-columns: 290px 1fr; height: 100vh;
+  }
+
+  /* --- колонка настроек --- */
+  aside {
+    border-right: 1px solid var(--rule); padding: 28px 24px; display: flex; flex-direction: column; gap: 26px;
+    overflow-y: auto;
+  }
+  h1 { font: 600 26px/1.15 var(--display); letter-spacing: .01em; margin: 0; }
+  .stamp {
+    align-self: flex-start; transform: rotate(-4deg); margin-top: 4px;
+    border: 2.5px solid var(--stamp); color: var(--stamp); border-radius: 6px;
+    padding: 6px 12px 5px; font: 600 15px/1.2 var(--display); letter-spacing: .02em;
+    box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 3.5px var(--stamp);
+  }
+  .stamp small { display: block; font: 400 12.5px/1.3 var(--text); letter-spacing: 0; max-width: 21ch; }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  legend, .field-name { font: 600 15px var(--display); margin-bottom: 10px; padding: 0; }
+  .mode { display: block; position: relative; padding: 10px 12px 10px 38px; border-radius: 8px; cursor: pointer; }
+  .mode + .mode { margin-top: 4px; }
+  .mode input { position: absolute; left: 12px; top: 13px; accent-color: var(--action); width: 16px; height: 16px; }
+  .mode b { display: block; font: 600 15.5px var(--display); }
+  .mode span { display: block; font-size: 13.5px; color: var(--graphite); line-height: 1.4; }
+  .mode:has(input:checked) { background: var(--sheet); box-shadow: inset 3px 0 0 var(--action); }
+  .mode:has(input:focus-visible) { outline: 2px solid var(--action); outline-offset: 2px; }
+  select, textarea, button { font: inherit; color: inherit; }
+  select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet);
+  }
+  .status { font-size: 13.5px; color: var(--graphite); line-height: 1.5; }
+  .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--graphite); }
+  .status.ok .dot { background: #3E8A5B; }
+  .status.bad .dot { background: var(--stamp); }
+  .status.bad { color: var(--stamp); }
+  .ghost {
+    margin-top: auto; align-self: flex-start; background: none; border: 1px solid var(--rule); border-radius: 6px;
+    padding: 7px 14px; cursor: pointer; color: var(--graphite);
+  }
+  .ghost:hover { color: var(--ink); border-color: var(--graphite); }
+
+  /* --- разговор --- */
+  main { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+  #log { overflow-y: auto; padding: 32px clamp(16px, 5vw, 64px) 16px; }
+  .entry { max-width: 72ch; margin: 0 0 22px; }
+  .entry .who { font: 600 14px var(--display); color: var(--graphite); margin-bottom: 4px; }
+  .entry .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .entry.user .body { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+  .entry.bot .body { border-left: 3px solid var(--action); padding: 2px 0 2px 14px; }
+  .entry .meta { font-size: 13px; color: var(--graphite); margin-top: 6px; }
+  .entry.error .body { border-left-color: var(--stamp); color: var(--stamp); }
+  .typing::after { content: "▍"; color: var(--action); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .order { border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); margin-top: 10px; overflow: hidden; }
+  .order h3 { margin: 0; padding: 9px 14px; font: 600 15px var(--display); border-bottom: 1px solid var(--rule); }
+  .order dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; }
+  .order dt, .order dd { margin: 0; padding: 8px 14px; border-bottom: 1px solid var(--rule); }
+  .order dt { color: var(--graphite); font-size: 14px; }
+  .order dd.empty { color: var(--graphite); font-style: italic; }
+  .order pre { margin: 0; padding: 10px 14px; font: 13px/1.5 var(--mono); overflow-x: auto; }
+  .order .actions { padding: 8px 14px; }
+
+  .empty-state { max-width: 60ch; margin: 8vh auto 0; }
+  .empty-state h2 { font: 600 24px/1.2 var(--display); margin: 0 0 6px; }
+  .empty-state p { color: var(--graphite); margin: 0 0 18px; }
+  .example {
+    display: block; width: 100%; text-align: left; background: var(--sheet); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; cursor: pointer;
+  }
+  .example:hover { border-color: var(--action); }
+
+  form { border-top: 1px solid var(--rule); padding: 14px clamp(16px, 5vw, 64px) 18px; background: var(--paper); }
+  .composer { display: flex; gap: 10px; align-items: flex-end; max-width: calc(72ch + 140px); }
+  textarea {
+    flex: 1; resize: none; min-height: 48px; max-height: 40vh; padding: 12px 14px; border-radius: 8px;
+    border: 1px solid var(--rule); background: var(--sheet); line-height: 1.45;
+  }
+  .primary {
+    background: var(--action); color: var(--sheet); border: 0; border-radius: 8px; padding: 12px 20px;
+    font: 600 15.5px var(--display); cursor: pointer; min-width: 128px;
+  }
+  .primary.stop { background: var(--stamp); }
+  .primary:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: 12.5px; color: var(--graphite); margin-top: 6px; }
+  :focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  textarea:focus-visible, select:focus-visible { outline-offset: 0; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    aside {
+      border-right: 0; border-bottom: 1px solid var(--rule); padding: 12px 14px; gap: 10px;
+      display: grid; grid-template-columns: 1fr auto; align-items: center;
+    }
+    h1 { font-size: 20px; }
+    .stamp { padding: 3px 8px 2px; font-size: 12.5px; transform: rotate(-3deg); margin: 0; }
+    .stamp small, legend, .field-name, .mode span { display: none; }
+    fieldset, #status { grid-column: 1 / -1; }
+    #reset { margin: 0; padding: 8px 10px; font-size: 14px; }
+    .modes-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .mode { padding: 8px 6px; text-align: center; border: 1px solid var(--rule); }
+    .mode + .mode { margin-top: 0; }
+    .mode input { position: absolute; opacity: 0; }
+    .mode b { font-size: 14px; line-height: 1.2; }
+    .mode:has(input:checked) { box-shadow: inset 0 -3px 0 var(--action); }
+    #status { font-size: 12.5px; }
+    .empty-state { margin-top: 3vh; }
+    .empty-state h2 { font-size: 20px; }
+    #log { padding-top: 16px; }
+    .primary { min-width: 0; padding: 12px 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .typing::after { animation: none; } }
+</style>
+</head>
+<body>
+<aside>
+  <div>
+    <h1>Ассистент автосервиса</h1>
+  </div>
+  <div class="stamp" title="Модель запущена через Ollama на этом компьютере. Запросы не уходят в интернет.">
+    Работает локально
+    <small>облачные модели не используются</small>
+  </div>
+
+  <fieldset>
+    <legend>Что сделать</legend>
+    <div class="modes-list">
+      <label class="mode"><input type="radio" name="mode" value="chat" checked><b>Чат</b>
+        <span>Вопросы по работе сервиса и обслуживанию машин</span></label>
+      <label class="mode"><input type="radio" name="mode" value="reply"><b>Ответ клиенту</b>
+        <span>Вставьте сообщение клиента — получите вежливый ответ</span></label>
+      <label class="mode"><input type="radio" name="mode" value="order"><b>Заявка в JSON</b>
+        <span>Вставьте сообщение клиента — получите заявку по полям</span></label>
+    </div>
+  </fieldset>
+
+  <div>
+    <label class="field-name" for="model">Модель</label>
+    <select id="model"><option>загрузка…</option></select>
+  </div>
+
+  <div id="status" class="status"><span class="dot"></span>Проверяю Ollama…</div>
+
+  <button class="ghost" id="reset" type="button">Новый разговор</button>
+</aside>
+
+<main>
+  <div id="log" aria-live="polite"></div>
+  <form id="form">
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Напишите сообщение" aria-label="Сообщение"></textarea>
+      <button class="primary" id="send" type="submit">Отправить</button>
+    </div>
+    <div class="hint">Enter — отправить, Shift + Enter — новая строка</div>
+  </form>
+</main>
+
+<script>
+const EXAMPLES = {
+  chat: ["Как часто нужно менять моторное масло?", "Что проверить, если скрипят тормоза?",
+         "Составь чек-лист приёмки машины в ремонт"],
+  reply: ["Здравствуйте! Сколько стоит замена колодок на Солярис и можно ли сегодня?",
+          "Машину забрал вчера, а лампа check engine опять горит. Что делать?"],
+  order: ["Добрый день, это Ольга Смирнова, 8 912 345-67-89. Нужен шиномонтаж на Тигуан, лучше в субботу утром.",
+          "Алексей, Лада Веста, стучит подвеска справа спереди. Телефон +7 903 222-11-00, могу после 18:00."]
+};
+const EMPTY_TEXT = {
+  chat: ["Спросите что угодно о работе сервиса", "Модель отвечает прямо на этом компьютере — данные никуда не уходят."],
+  reply: ["Вставьте сообщение клиента", "Модель напишет вежливый ответ. Цены и сроки она не придумывает — оставит пометку [уточнить]."],
+  order: ["Вставьте сообщение клиента", "Модель разложит его на поля заявки: клиент, телефон, машина, работы, когда."]
+};
+const FIELDS = {name: "Клиент", phone: "Телефон", car: "Автомобиль", service: "Работы", date: "Когда", comment: "Комментарий"};
+
+const $ = (s) => document.querySelector(s);
+const log = $("#log"), input = $("#input"), sendBtn = $("#send"), modelSel = $("#model"), statusEl = $("#status");
+const history = {chat: [], reply: [], order: []};
+let mode = "chat", controller = null;
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;   // только текст: разметка из ответа модели не выполняется
+  return n;
+}
+
+function render() {
+  log.replaceChildren();
+  if (!history[mode].length) {
+    const box = el("div", "empty-state");
+    box.append(el("h2", "", EMPTY_TEXT[mode][0]), el("p", "", EMPTY_TEXT[mode][1]));
+    for (const ex of EXAMPLES[mode]) {
+      const b = el("button", "example", ex);
+      b.type = "button";
+      b.onclick = () => { input.value = ex; autosize(); input.focus(); };
+      box.append(b);
+    }
+    log.append(box);
+    return;
+  }
+  for (const m of history[mode]) log.append(entry(m));
+  log.scrollTop = log.scrollHeight;
+}
+
+function entry(m) {
+  const box = el("div", "entry " + (m.role === "user" ? "user" : m.error ? "bot error" : "bot"));
+  box.append(el("div", "who", m.role === "user" ? "Вы" : (m.model || "Модель")));
+  const body = el("div", "body", m.content);
+  const card = (m.role === "assistant" && mode === "order" && m.done && !m.error) ? orderCard(m.content) : null;
+  if (!card || !card.classList.contains("order")) box.append(body);   // пока печатается или не JSON — видно текст
+  if (card) box.append(card);
+  if (m.meta) box.append(el("div", "meta", m.meta));
+  m.node = body;
+  return box;
+}
+
+function orderCard(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return el("div", "meta", "Модель вернула не JSON — показан текст как есть."); }
+  const card = el("div", "order");
+  card.append(el("h3", "", "Заявка"));
+  const dl = el("dl");
+  for (const [k, label] of Object.entries(FIELDS)) {
+    const v = data[k];
+    dl.append(el("dt", "", label), el("dd", v ? "" : "empty", v ? String(v) : "не указано"));
+  }
+  card.append(dl);
+  const actions = el("div", "actions");
+  const copy = el("button", "ghost", "Скопировать JSON");
+  copy.type = "button";
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(data, null, 2)); copy.textContent = "Скопировано"; }
+    catch { copy.textContent = "Не удалось скопировать"; }
+  };
+  actions.append(copy);
+  card.append(actions);
+  return card;
+}
+
+async function refreshStatus() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    if (!s.ok) throw new Error(s.error);
+    const current = modelSel.value;
+    modelSel.replaceChildren();
+    for (const name of s.models) modelSel.append(new Option(name, name));
+    if (!s.models.length) modelSel.append(new Option("моделей нет", ""));
+    modelSel.value = s.models.includes(current) ? current : (s.models.includes(s.default_model) ? s.default_model : s.models[0] || "");
+    const where = s.loaded[modelSel.value];
+    statusEl.className = "status ok";
+    statusEl.replaceChildren(el("span", "dot"),
+      document.createTextNode(`Ollama ${s.version} работает. ` +
+        (s.models.length ? (where ? `Модель загружена, считает на: ${where}.` : "Модель загрузится при первом вопросе.")
+                         : `Скачайте модель: ollama pull ${s.default_model}`)));
+  } catch (e) {
+    statusEl.className = "status bad";
+    statusEl.replaceChildren(el("span", "dot"), document.createTextNode(e.message || "Сервер приложения не отвечает."));
+  }
+}
+
+async function send(text) {
+  const model = modelSel.value;
+  if (!model) { flashError("Нет модели. Скачайте её: ollama pull qwen2.5:7b"); return; }
+  const list = history[mode];
+  list.push({role: "user", content: text});
+  const answer = {role: "assistant", content: "", model, done: false};
+  list.push(answer);
+  render();
+  answer.node.classList.add("typing");
+  setBusy(true);
+  controller = new AbortController();
+  const started = performance.now();
+  try {
+    const resp = await fetch("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"}, signal: controller.signal,
+      body: JSON.stringify({mode, model, messages: list.filter(m => !m.error && m !== answer).map(({role, content}) => ({role, content}))})
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error || `Ошибка ${resp.status}`);
+    const reader = resp.body.getReader(), decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        if (msg.error) throw new Error(msg.error);
+        if (msg.t) { answer.content += msg.t; answer.node.textContent = answer.content; log.scrollTop = log.scrollHeight; }
+        if (msg.done) {
+          answer.meta = `${msg.tokens} токенов, ${msg.tok_per_s ?? "?"} токенов в секунду, ${msg.seconds} с`;
+        }
+      }
+    }
+    answer.done = true;
+    if (!answer.content.trim()) throw new Error("Модель вернула пустой ответ.");
+  } catch (e) {
+    if (e.name === "AbortError") { answer.done = true; answer.meta = "Остановлено."; }
+    else { answer.error = true; answer.content = e.message; }
+  } finally {
+    controller = null;
+    setBusy(false);
+    render();
+    refreshStatus();
+  }
+}
+
+function flashError(text) {
+  history[mode].push({role: "assistant", content: text, error: true});
+  render();
+}
+
+function setBusy(busy) {
+  sendBtn.textContent = busy ? "Остановить" : "Отправить";
+  sendBtn.classList.toggle("stop", busy);
+  input.disabled = busy;
+  if (!busy) input.focus();
+}
+
+function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, innerHeight * 0.4) + "px"; }
+
+$("#form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (controller) { controller.abort(); return; }
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = ""; autosize();
+  send(text);
+});
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#form").requestSubmit(); }
+});
+input.addEventListener("input", autosize);
+document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", () => {
+  if (controller) controller.abort();
+  mode = r.value; render(); input.focus();
+}));
+$("#reset").onclick = () => { if (controller) controller.abort(); history[mode] = []; render(); input.focus(); };
+
+render();
+refreshStatus();
+setInterval(refreshStatus, 15000);
+input.focus();
+</script>
+</body>
+</html>
